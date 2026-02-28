@@ -1,6 +1,9 @@
 default_platform(:ios)
 
 platform :ios do
+  PROJECT_NAME = "{{PROJECT_NAME}}"
+  PROJECT_TARGET = ENV["FL_TARGET"] || "{{PROJECT_NAME}}"
+
   WORKSPACE = "{{WORKSPACE}}"
   XCODEPROJ = "{{XCODEPROJ}}"
   SCHEME_DEV = "{{SCHEME_DEV}}"
@@ -16,6 +19,13 @@ platform :ios do
   PROFILE_DIS = "{{PROFILE_DIS}}"
   SIGNING_STYLE = "{{SIGNING_STYLE}}" # automatic | manual
 
+  MATCH_GIT_URL = ENV["MATCH_GIT_URL"] || "{{MATCH_GIT_URL}}"
+  MATCH_GIT_BRANCH = ENV["MATCH_GIT_BRANCH"] || "{{MATCH_GIT_BRANCH}}"
+
+  ENABLE_QUALITY_GATE = ENV["ENABLE_QUALITY_GATE"] || "{{ENABLE_QUALITY_GATE}}"
+  ENABLE_TESTS = ENV["ENABLE_TESTS"] || "{{ENABLE_TESTS}}"
+  ENABLE_SWIFTLINT = ENV["ENABLE_SWIFTLINT"] || "{{ENABLE_SWIFTLINT}}"
+
   PGYER_API_KEY = ENV["PGYER_API_KEY"] || "YOUR_PGYER_API_KEY"
 
   def send_notification(title, message, sound = "default")
@@ -24,6 +34,18 @@ platform :ios do
     safe_sound = sound.to_s.gsub('"', '\\\"').gsub("'", "\\\\'")
 
     sh("osascript -e 'display notification \\\"#{safe_message}\\\" with title \\\"#{safe_title}\\\" sound name \\\"#{safe_sound}\\\"'")
+  end
+
+  def valid_team_id?(team_id)
+    !team_id.to_s.empty? && team_id != "YOUR_TEAM_ID"
+  end
+
+  def manual_signing?
+    SIGNING_STYLE.to_s.downcase == "manual"
+  end
+
+  def match_configured?
+    !MATCH_GIT_URL.to_s.empty? && MATCH_GIT_URL != "YOUR_MATCH_GIT_URL"
   end
 
   def gym_container_options
@@ -44,11 +66,7 @@ platform :ios do
       signingStyle: style
     }
 
-    if !team_id.to_s.empty? && team_id != "YOUR_TEAM_ID"
-      options[:teamID] = team_id
-    else
-      UI.important("TEAM_ID is not configured. If export fails, set --team-id and regenerate fastlane config.")
-    end
+    options[:teamID] = team_id if valid_team_id?(team_id)
 
     if style == "manual"
       if profile_name.to_s.empty?
@@ -61,6 +79,124 @@ platform :ios do
     options
   end
 
+  def quality_gate_enabled?
+    ENABLE_QUALITY_GATE.to_s.downcase != "false"
+  end
+
+  private_lane :run_quality_gate do |options|
+    unless quality_gate_enabled?
+      UI.message("Quality gate disabled by ENABLE_QUALITY_GATE=false")
+      next
+    end
+
+    scheme = options[:scheme] || SCHEME_DEV
+
+    if ENABLE_TESTS.to_s.downcase == "true"
+      scan(
+        **gym_container_options,
+        scheme: scheme,
+        clean: true,
+        fail_build: true
+      )
+    end
+
+    if ENABLE_SWIFTLINT.to_s.downcase == "true"
+      has_swiftlint = sh("command -v swiftlint >/dev/null 2>&1 && echo yes || echo no").strip == "yes"
+      if has_swiftlint
+        sh("swiftlint")
+      else
+        UI.important("swiftlint not installed, skipping lint step")
+      end
+    end
+  end
+
+  private_lane :resolve_version_info do |options|
+    build_number = options[:build_number]
+
+    if build_number.to_s.empty?
+      begin
+        build_number = sh("git rev-list --count HEAD").strip
+      rescue
+        build_number = Time.now.strftime("%y%m%d%H%M")
+      end
+    end
+
+    increment_build_number(
+      xcodeproj: XCODEPROJ,
+      build_number: build_number
+    )
+
+    version = get_version_number(
+      xcodeproj: XCODEPROJ,
+      target: PROJECT_TARGET
+    )
+    build = get_build_number(xcodeproj: XCODEPROJ)
+
+    commit = "unknown"
+    changelog = "No changelog"
+    begin
+      commit = sh("git rev-parse --short HEAD").strip
+      changelog = sh("git log -1 --pretty=%s").strip
+    rescue
+      UI.important("Git metadata unavailable, changelog fallback applied")
+    end
+
+    {
+      version: version,
+      build: build,
+      commit: commit,
+      changelog: changelog
+    }
+  end
+
+  private_lane :build_and_upload do |options|
+    env_type = options[:env_type]
+    scheme = options[:scheme]
+    configuration = options[:configuration]
+    export_method = options[:export_method]
+    bundle_id = options[:bundle_id]
+    profile_name = options[:profile_name]
+
+    run_quality_gate(scheme: scheme)
+    meta = resolve_version_info(build_number: options[:build_number])
+
+    ipa_path = gym(
+      **gym_container_options,
+      scheme: scheme,
+      configuration: configuration,
+      export_method: export_method,
+      output_directory: OUTPUT_DIR,
+      output_name: "#{PROJECT_NAME}_#{env_type.capitalize}_#{meta[:version]}_#{meta[:build]}.ipa",
+      clean: true,
+      export_options: build_export_options(
+        method: export_method,
+        bundle_id: bundle_id,
+        profile_name: profile_name,
+        team_id: TEAM_ID,
+        signing_style: SIGNING_STYLE
+      ),
+      skip_package_ipa: false,
+      skip_archive: false,
+      include_bitcode: false
+    )
+
+    upload_to_pgyer(
+      env_type: env_type,
+      version: meta[:version],
+      build: meta[:build],
+      changelog: meta[:changelog],
+      ipa_path: ipa_path
+    )
+
+    send_notification(
+      "#{env_type.upcase}打包完成",
+      "#{PROJECT_NAME} #{meta[:version]}(#{meta[:build]}) commit:#{meta[:commit]}",
+      "Glass"
+    )
+
+    meta.merge({ ipa_path: ipa_path })
+  end
+
   desc "准备构建环境"
   lane :prepare do
     cocoapods(
@@ -69,110 +205,133 @@ platform :ios do
     )
   end
 
-  desc "打包Dev环境并上传到蒲公英"
+  desc "质量门禁（测试+可选 SwiftLint）"
+  lane :quality_gate do |options|
+    run_quality_gate(scheme: options[:scheme] || SCHEME_DEV)
+  end
+
+  desc "版本策略：使用指定 build number 或 git commit 计数"
+  lane :versioning do |options|
+    resolve_version_info(build_number: options[:build_number])
+  end
+
+  desc "签名同步（match）"
+  lane :certificates do |options|
+    unless manual_signing?
+      UI.message("Automatic signing enabled, skip match")
+      next
+    end
+
+    unless match_configured?
+      UI.important("MATCH_GIT_URL not set, skip match. Configure it in .env.fastlane(.ci) when needed.")
+      next
+    end
+
+    type = options[:type] || "development"
+    readonly = options.key?(:readonly) ? options[:readonly] : false
+
+    match_options = {
+      type: type,
+      readonly: readonly,
+      git_url: MATCH_GIT_URL,
+      git_branch: MATCH_GIT_BRANCH,
+      app_identifier: [BUNDLE_ID_DEV, BUNDLE_ID_DIS].uniq
+    }
+    match_options[:team_id] = TEAM_ID if valid_team_id?(TEAM_ID)
+
+    match(match_options)
+  end
+
+  desc "本地 Dev 打包并上传蒲公英"
   lane :dev do
     prepare
+    certificates(type: "development", readonly: false)
 
-    increment_build_number(
-      xcodeproj: XCODEPROJ
-    )
-
-    version = get_version_number(
-      xcodeproj: XCODEPROJ,
-      target: "{{PROJECT_NAME}}"
-    )
-    build = get_build_number(xcodeproj: XCODEPROJ)
-
-    ipa_path = gym(
-      **gym_container_options,
+    build_and_upload(
+      env_type: "dev",
       scheme: SCHEME_DEV,
       configuration: "Debug",
       export_method: "development",
-      output_directory: OUTPUT_DIR,
-      output_name: "{{PROJECT_NAME}}_Dev_#{version}_#{build}.ipa",
-      clean: true,
-      export_options: build_export_options(
-        method: "development",
-        bundle_id: BUNDLE_ID_DEV,
-        profile_name: PROFILE_DEV,
-        team_id: TEAM_ID,
-        signing_style: SIGNING_STYLE
-      ),
-      skip_package_ipa: false,
-      skip_archive: false,
-      include_bitcode: false
-    )
-
-    upload_to_pgyer(
-      env_type: "dev",
-      version: version,
-      build: build,
-      ipa_path: ipa_path
-    )
-
-    send_notification(
-      "Dev环境打包完成",
-      "{{PROJECT_NAME}} #{version} (#{build}) 已上传到蒲公英",
-      "Glass"
+      bundle_id: BUNDLE_ID_DEV,
+      profile_name: PROFILE_DEV
     )
   end
 
-  desc "打包Dis环境并上传到蒲公英"
+  desc "本地 Dis 打包并上传蒲公英"
   lane :dis do
     prepare
+    certificates(type: "adhoc", readonly: false)
 
-    increment_build_number(
-      xcodeproj: XCODEPROJ
-    )
-
-    version = get_version_number(
-      xcodeproj: XCODEPROJ,
-      target: "{{PROJECT_NAME}}"
-    )
-    build = get_build_number(xcodeproj: XCODEPROJ)
-
-    ipa_path = gym(
-      **gym_container_options,
+    build_and_upload(
+      env_type: "dis",
       scheme: SCHEME_DIS,
       configuration: "Release",
       export_method: "ad-hoc",
-      output_directory: OUTPUT_DIR,
-      output_name: "{{PROJECT_NAME}}_Dis_#{version}_#{build}.ipa",
-      clean: true,
-      export_options: build_export_options(
-        method: "ad-hoc",
-        bundle_id: BUNDLE_ID_DIS,
-        profile_name: PROFILE_DIS,
-        team_id: TEAM_ID,
-        signing_style: SIGNING_STYLE
-      ),
-      skip_package_ipa: false,
-      skip_archive: false,
-      include_bitcode: false
+      bundle_id: BUNDLE_ID_DIS,
+      profile_name: PROFILE_DIS
     )
+  end
 
-    upload_to_pgyer(
+  desc "CI 初始化"
+  lane :ci_setup do
+    setup_ci if is_ci
+    cocoapods(
+      clean_install: true,
+      repo_update: false,
+      silent: true
+    )
+  end
+
+  desc "CI Dev 构建并上传蒲公英"
+  lane :ci_build_dev do
+    ci_setup
+    certificates(type: "development", readonly: true)
+
+    build_and_upload(
+      env_type: "dev",
+      scheme: SCHEME_DEV,
+      configuration: "Debug",
+      export_method: "development",
+      bundle_id: BUNDLE_ID_DEV,
+      profile_name: PROFILE_DEV
+    )
+  end
+
+  desc "CI Dis 构建并上传蒲公英"
+  lane :ci_build_dis do
+    ci_setup
+    certificates(type: "adhoc", readonly: true)
+
+    build_and_upload(
       env_type: "dis",
-      version: version,
-      build: build,
-      ipa_path: ipa_path
+      scheme: SCHEME_DIS,
+      configuration: "Release",
+      export_method: "ad-hoc",
+      bundle_id: BUNDLE_ID_DIS,
+      profile_name: PROFILE_DIS
     )
+  end
 
-    send_notification(
-      "Dis环境打包完成",
-      "{{PROJECT_NAME}} #{version} (#{build}) 已上传到蒲公英",
-      "Glass"
-    )
+  desc "检查关键配置"
+  lane :validate_config do
+    UI.user_error!("PGYER_API_KEY not configured") if PGYER_API_KEY == "YOUR_PGYER_API_KEY"
+
+    if manual_signing? && !match_configured?
+      UI.important("Manual signing without match: ensure local certificates/profiles are installed")
+    end
+
+    UI.success("Config validation passed")
   end
 
   private_lane :upload_to_pgyer do |options|
     env_type = options[:env_type]
     version = options[:version]
     build = options[:build]
+    changelog = options[:changelog]
     ipa_path = options[:ipa_path]
 
     unless ipa_path
-      ipa_path = File.join(OUTPUT_DIR, "{{PROJECT_NAME}}_#{env_type.capitalize}_#{version}_#{build}.ipa")
+      ipa_path = File.join(OUTPUT_DIR, "#{PROJECT_NAME}_#{env_type.capitalize}_#{version}_#{build}.ipa")
       ipa_path = File.expand_path(ipa_path) unless ipa_path.start_with?("/")
     end
 
@@ -183,17 +342,18 @@ platform :ios do
     pgyer(
       api_key: PGYER_API_KEY,
       ipa: ipa_path,
-      update_description: "#{env_type.upcase} 环境构建\\n版本: #{version}\\nBuild: #{build}\\n构建时间: #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
+      update_description: "#{env_type.upcase} 构建\n版本: #{version}\nBuild: #{build}\n变更: #{changelog}\n时间: #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
   end
 
   desc "清理构建产物"
   lane :clean_builds do
     sh("rm -rf #{OUTPUT_DIR}/*")
+    puts "🧹 clean finished"
   end
 
   error do |lane, exception|
-    short_msg = exception.message.to_s[0..100]
-    send_notification("打包失败", short_msg, "Basso")
+    short_msg = exception.message.to_s[0..140]
+    send_notification("打包失败", "#{lane}: #{short_msg}", "Basso")
   end
 end

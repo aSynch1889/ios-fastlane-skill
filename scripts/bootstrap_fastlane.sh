@@ -18,6 +18,13 @@ TEAM_ID=""
 PROFILE_DEV=""
 PROFILE_DIS=""
 SIGNING_STYLE=""
+
+MATCH_GIT_URL="YOUR_MATCH_GIT_URL"
+MATCH_GIT_BRANCH="main"
+ENABLE_QUALITY_GATE="true"
+ENABLE_TESTS="true"
+ENABLE_SWIFTLINT="false"
+
 DRY_RUN="false"
 
 usage() {
@@ -25,20 +32,29 @@ usage() {
 Usage:
   bootstrap_fastlane.sh [options]
 
-Options (all optional, auto-detect first):
-  --project-name    MyApp
-  --workspace       MyApp.xcworkspace
-  --xcodeproj       MyApp.xcodeproj
-  --scheme-dev      MyApp
-  --scheme-dis      MyApp
-  --bundle-id-dev   com.example.myapp.dev
-  --bundle-id-dis   com.example.myapp
-  --team-id         ABCD123456
-  --profile-dev     myapp_dev
-  --profile-dis     myapp_dis
-  --signing-style   automatic|manual
-  --dry-run         print resolved config only
-  --help            show this help
+Core options:
+  --project-name      MyApp
+  --workspace         MyApp.xcworkspace
+  --xcodeproj         MyApp.xcodeproj
+  --scheme-dev        MyApp
+  --scheme-dis        MyApp
+  --bundle-id-dev     com.example.myapp.dev
+  --bundle-id-dis     com.example.myapp
+  --team-id           ABCD123456
+  --profile-dev       myapp_dev
+  --profile-dis       myapp_dis
+  --signing-style     automatic|manual
+
+Fastlane power-up options:
+  --match-git-url     git@github.com:org/certs.git
+  --match-git-branch  main
+  --enable-quality-gate true|false
+  --enable-tests      true|false
+  --enable-swiftlint  true|false
+
+Other:
+  --dry-run
+  --help
 USAGE
 }
 
@@ -57,6 +73,16 @@ normalize_signing_style() {
   case "$raw" in
     automatic|auto) printf "automatic" ;;
     manual) printf "manual" ;;
+    *) printf "" ;;
+  esac
+}
+
+normalize_bool() {
+  local raw="${1:-}"
+  raw=$(printf "%s" "$raw" | tr '[:upper:]' '[:lower:]')
+  case "$raw" in
+    true|1|yes|y) printf "true" ;;
+    false|0|no|n) printf "false" ;;
     *) printf "" ;;
   esac
 }
@@ -134,6 +160,11 @@ while [[ $# -gt 0 ]]; do
     --profile-dev) PROFILE_DEV="$2"; shift 2 ;;
     --profile-dis) PROFILE_DIS="$2"; shift 2 ;;
     --signing-style) SIGNING_STYLE="$2"; shift 2 ;;
+    --match-git-url) MATCH_GIT_URL="$2"; shift 2 ;;
+    --match-git-branch) MATCH_GIT_BRANCH="$2"; shift 2 ;;
+    --enable-quality-gate) ENABLE_QUALITY_GATE="$2"; shift 2 ;;
+    --enable-tests) ENABLE_TESTS="$2"; shift 2 ;;
+    --enable-swiftlint) ENABLE_SWIFTLINT="$2"; shift 2 ;;
     --dry-run) DRY_RUN="true"; shift ;;
     --help) usage; exit 0 ;;
     *)
@@ -160,7 +191,7 @@ fi
 if [[ -z "$PROJECT_NAME" ]]; then
   if [[ -n "$XCODEPROJ" ]]; then
     PROJECT_NAME="${XCODEPROJ%.xcodeproj}"
-  elif [[ -n "$WORKSPACE" ]]; then
+  else
     PROJECT_NAME="${WORKSPACE%.xcworkspace}"
   fi
 fi
@@ -193,12 +224,21 @@ if [[ -z "$SIGNING_STYLE" ]]; then
   SIGNING_STYLE="manual"
 fi
 
+ENABLE_QUALITY_GATE=$(normalize_bool "$ENABLE_QUALITY_GATE")
+ENABLE_TESTS=$(normalize_bool "$ENABLE_TESTS")
+ENABLE_SWIFTLINT=$(normalize_bool "$ENABLE_SWIFTLINT")
+
+if [[ -z "$ENABLE_QUALITY_GATE" || -z "$ENABLE_TESTS" || -z "$ENABLE_SWIFTLINT" ]]; then
+  echo "Invalid boolean value in quality gate options. Use true/false." >&2
+  exit 1
+fi
+
 warnings=()
 if [[ -z "$TEAM_ID" && "$SIGNING_STYLE" == "manual" ]]; then
   TEAM_ID="$DEFAULT_TEAM_ID"
   warnings+=("Manual signing detected but TEAM_ID was not found. Using placeholder: $DEFAULT_TEAM_ID")
-elif [[ -z "$TEAM_ID" && "$SIGNING_STYLE" == "automatic" ]]; then
-  warnings+=("TEAM_ID not found. This is usually fine for automatic signing if Xcode project is configured.")
+elif [[ -z "$TEAM_ID" ]]; then
+  warnings+=("TEAM_ID not found. Automatic signing usually works if project already has signing config.")
 fi
 
 if [[ -z "$PROFILE_DEV" && -n "$PROJECT_NAME" ]]; then
@@ -240,6 +280,11 @@ echo "  TEAM_ID=${TEAM_ID:-<none>}"
 echo "  SIGNING_STYLE=$SIGNING_STYLE"
 echo "  PROFILE_DEV=${PROFILE_DEV:-<none>}"
 echo "  PROFILE_DIS=${PROFILE_DIS:-<none>}"
+echo "  MATCH_GIT_URL=$MATCH_GIT_URL"
+echo "  MATCH_GIT_BRANCH=$MATCH_GIT_BRANCH"
+echo "  ENABLE_QUALITY_GATE=$ENABLE_QUALITY_GATE"
+echo "  ENABLE_TESTS=$ENABLE_TESTS"
+echo "  ENABLE_SWIFTLINT=$ENABLE_SWIFTLINT"
 
 if [[ ${#warnings[@]} -gt 0 ]]; then
   echo "Warnings:"
@@ -277,14 +322,21 @@ render() {
     -e "s|{{PROFILE_DEV}}|$PROFILE_DEV|g" \
     -e "s|{{PROFILE_DIS}}|$PROFILE_DIS|g" \
     -e "s|{{SIGNING_STYLE}}|$SIGNING_STYLE|g" \
+    -e "s|{{MATCH_GIT_URL}}|$MATCH_GIT_URL|g" \
+    -e "s|{{MATCH_GIT_BRANCH}}|$MATCH_GIT_BRANCH|g" \
+    -e "s|{{ENABLE_QUALITY_GATE}}|$ENABLE_QUALITY_GATE|g" \
+    -e "s|{{ENABLE_TESTS}}|$ENABLE_TESTS|g" \
+    -e "s|{{ENABLE_SWIFTLINT}}|$ENABLE_SWIFTLINT|g" \
     "$src" > "$dest"
 }
 
 render "$TEMPLATE_DIR/Fastfile.template" "$TARGET_DIR/Fastfile"
 render "$TEMPLATE_DIR/Appfile.template" "$TARGET_DIR/Appfile"
 cp "$TEMPLATE_DIR/Pluginfile.template" "$TARGET_DIR/Pluginfile"
+render "$TEMPLATE_DIR/env.fastlane.example.template" "$TARGET_DIR/.env.fastlane.example"
 
 echo "Generated: $TARGET_DIR/Fastfile"
 echo "Generated: $TARGET_DIR/Appfile"
 echo "Generated: $TARGET_DIR/Pluginfile"
-echo "Next: bundle install && export PGYER_API_KEY=xxx"
+echo "Generated: $TARGET_DIR/.env.fastlane.example"
+echo "Next: bundle install && copy fastlane/.env.fastlane.example to fastlane/.env.fastlane"

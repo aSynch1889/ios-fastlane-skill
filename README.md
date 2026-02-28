@@ -2,21 +2,28 @@
 
 English | [中文](#中文说明)
 
-A reusable Codex skill for bootstrapping iOS `fastlane` pipelines with Dev/Dis lanes and Pgyer upload.
+A reusable Codex skill to bootstrap and standardize iOS fastlane with signing sync, quality gates, git-based versioning, CI lanes, and Pgyer upload.
 
 ## Features
 
-- Generates `fastlane/Fastfile`, `fastlane/Appfile`, and `fastlane/Pluginfile`
-- Supports both `.xcworkspace` and `.xcodeproj` projects
-- Auto-detects key values from your iOS project:
-  - workspace/project
-  - scheme (prefers project-name scheme)
+- Generates:
+  - `fastlane/Fastfile`
+  - `fastlane/Appfile`
+  - `fastlane/Pluginfile`
+  - `fastlane/.env.fastlane.example`
+- Supports both `.xcworkspace` and `.xcodeproj`
+- Auto-detects project settings:
+  - project/workspace
+  - scheme (prefers project name)
   - bundle identifiers
   - signing style (`automatic` / `manual`)
   - team id (optional)
-- Supports both signing modes:
-  - `automatic`: no profile required
-  - `manual`: requires profiles; if team id is missing, uses `YOUR_TEAM_ID` placeholder with warning
+- Advanced lanes included:
+  - `certificates` (match)
+  - `quality_gate` (scan + optional swiftlint)
+  - `versioning` (git-driven build/changelog)
+  - `ci_setup`, `ci_build_dev`, `ci_build_dis`
+  - `validate_config`
 
 ## Repository Structure
 
@@ -26,14 +33,9 @@ agents/openai.yaml
 assets/fastlane/Fastfile.template
 assets/fastlane/Appfile.template
 assets/fastlane/Pluginfile.template
+assets/fastlane/env.fastlane.example.template
 scripts/bootstrap_fastlane.sh
 ```
-
-## Prerequisites
-
-- macOS with Xcode CLI tools
-- Ruby/Bundler (for running fastlane)
-- `xcodebuild` available in PATH
 
 ## Quick Start
 
@@ -43,39 +45,52 @@ Run in your iOS project root:
 bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
-If resolved config looks correct:
+Generate files:
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh
+bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
+  --match-git-url "git@github.com:your-org/certificates.git" \
+  --enable-tests true \
+  --enable-swiftlint false
 ```
 
-Then install and run:
+Then:
 
 ```bash
 bundle install
-export PGYER_API_KEY=your_key
+cp fastlane/.env.fastlane.example fastlane/.env.fastlane
+# fill PGYER_API_KEY / MATCH_PASSWORD / etc
+bundle exec fastlane ios validate_config
 bundle exec fastlane ios dev
-bundle exec fastlane ios dis
 ```
 
-## Common Overrides
+## Main Lanes
 
-```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
-  --signing-style manual \
-  --profile-dev myapp_dev \
-  --profile-dis myapp_dis \
-  --team-id ABCD123456
+```text
+prepare
+quality_gate
+versioning
+certificates
+dev
+dis
+ci_setup
+ci_build_dev
+ci_build_dis
+validate_config
+clean_builds
 ```
 
-Only `.xcodeproj` project:
+## Signing Strategy
 
-```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
-  --xcodeproj MyApp.xcodeproj
-```
+- `automatic`
+  - No profile required
+  - `match` lane is skipped
+- `manual`
+  - Requires profiles
+  - If `MATCH_GIT_URL` is set, `certificates` syncs signing assets via `match`
+  - Missing team id falls back to `YOUR_TEAM_ID` placeholder with warning
 
-## Parameters
+## Key Script Parameters
 
 ```text
 --project-name
@@ -88,93 +103,103 @@ bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane
 --team-id
 --profile-dev
 --profile-dis
---signing-style   automatic|manual
+--signing-style automatic|manual
+--match-git-url
+--match-git-branch
+--enable-quality-gate true|false
+--enable-tests true|false
+--enable-swiftlint true|false
 --dry-run
 ```
 
-## Notes
+## CI Example
 
-- `dis` lane defaults to `ad-hoc` export. Adjust for `app-store` or `enterprise` if needed.
-- Fastfile includes local macOS notifications via `osascript`.
+```bash
+bundle exec fastlane ios ci_build_dev
+bundle exec fastlane ios ci_build_dis
+```
 
 ---
 
 ## 中文说明
 
-这是一个可复用的 Codex skill，用于在 iOS 项目中快速初始化 `fastlane` 打包流程，并集成蒲公英上传。
+这是一个可复用的 Codex skill，用于在 iOS 项目中快速搭建并标准化 fastlane 流程，覆盖签名同步、质量门禁、版本策略、CI 构建与蒲公英分发。
 
 ### 功能
 
-- 自动生成 `fastlane/Fastfile`、`fastlane/Appfile`、`fastlane/Pluginfile`
-- 同时支持 `.xcworkspace` 与 `.xcodeproj`
-- 自动探测工程关键参数：
-  - workspace/project
-  - scheme（优先与项目同名）
+- 自动生成：
+  - `fastlane/Fastfile`
+  - `fastlane/Appfile`
+  - `fastlane/Pluginfile`
+  - `fastlane/.env.fastlane.example`
+- 支持 `.xcworkspace` / `.xcodeproj`
+- 自动探测工程参数：
+  - 工程容器
+  - scheme（优先项目同名）
   - bundle id
   - 签名模式（`automatic` / `manual`）
   - team id（可选）
-- 签名策略：
-  - `automatic`：不要求 profile
-  - `manual`：要求 profile；缺失 team id 时写入 `YOUR_TEAM_ID` 占位并给出提醒
-
-### 目录结构
-
-```text
-SKILL.md
-agents/openai.yaml
-assets/fastlane/Fastfile.template
-assets/fastlane/Appfile.template
-assets/fastlane/Pluginfile.template
-scripts/bootstrap_fastlane.sh
-```
-
-### 前置条件
-
-- macOS + Xcode 命令行工具
-- Ruby/Bundler（用于执行 fastlane）
-- PATH 中可用 `xcodebuild`
+- 内置高级 lane：
+  - `certificates`（match）
+  - `quality_gate`（scan + 可选 swiftlint）
+  - `versioning`（基于 git 的 build/changelog）
+  - `ci_setup`、`ci_build_dev`、`ci_build_dis`
+  - `validate_config`
 
 ### 快速开始
 
-在 iOS 项目根目录执行：
+在 iOS 项目根目录先预览：
 
 ```bash
 bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
-如果解析结果正确，直接生成：
+生成配置：
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh
+bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
+  --match-git-url "git@github.com:your-org/certificates.git" \
+  --enable-tests true \
+  --enable-swiftlint false
 ```
 
-然后安装依赖并执行：
+然后执行：
 
 ```bash
 bundle install
-export PGYER_API_KEY=your_key
+cp fastlane/.env.fastlane.example fastlane/.env.fastlane
+# 填写 PGYER_API_KEY / MATCH_PASSWORD 等
+bundle exec fastlane ios validate_config
 bundle exec fastlane ios dev
-bundle exec fastlane ios dis
 ```
 
-### 常见覆盖参数
+### 签名策略
 
-```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
-  --signing-style manual \
-  --profile-dev myapp_dev \
-  --profile-dis myapp_dis \
-  --team-id ABCD123456
+- `automatic`
+  - 不要求 profile
+  - `certificates` 自动跳过
+- `manual`
+  - 要求 profile
+  - 配置 `MATCH_GIT_URL` 后可通过 `certificates` 同步签名资产
+  - team id 缺失时写入 `YOUR_TEAM_ID` 占位并提醒
+
+### 常用 lane
+
+```text
+prepare
+quality_gate
+versioning
+certificates
+dev
+dis
+ci_setup
+ci_build_dev
+ci_build_dis
+validate_config
+clean_builds
 ```
 
-只有 `.xcodeproj` 的项目：
-
-```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
-  --xcodeproj MyApp.xcodeproj
-```
-
-### 参数列表
+### 脚本参数
 
 ```text
 --project-name
@@ -187,11 +212,11 @@ bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane
 --team-id
 --profile-dev
 --profile-dis
---signing-style   automatic|manual
+--signing-style automatic|manual
+--match-git-url
+--match-git-branch
+--enable-quality-gate true|false
+--enable-tests true|false
+--enable-swiftlint true|false
 --dry-run
 ```
-
-### 说明
-
-- `dis` lane 默认 `ad-hoc` 导出，如需 `app-store` 或 `enterprise` 请自行调整。
-- Fastfile 内置 `osascript` 本地通知。

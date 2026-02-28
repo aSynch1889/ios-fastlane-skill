@@ -1,60 +1,54 @@
 ---
 name: ios-fastlane-pgyer
-description: 复用 iOS Fastlane 打包与蒲公英上传流程。用于在新 iOS 项目快速生成 prepare/dev/dis/clean_builds lane，并包含构建失败通知与 pgyer 上传。
+description: Reuse an iOS fastlane pipeline with match signing sync, quality gate (tests/lint), git-based versioning, CI lanes, and Pgyer upload.
 ---
 
-# iOS Fastlane + Pgyer
+# iOS Fastlane + Pgyer (Production Ready)
 
-当用户希望在 iOS 项目中快速复用 Fastlane 打包（Dev/Dis）并上传蒲公英时使用此技能。
+Use this skill when users want to bootstrap or standardize iOS fastlane for local + CI delivery.
 
-## 自动探测策略
+## What this skill now provides
 
-脚本会优先自动读取：
-- `WORKSPACE`（当前目录第一个 `.xcworkspace`，可为空）
-- `XCODEPROJ`（当前目录第一个 `.xcodeproj`，可为空）
-- 要求二选一存在：`workspace` 或 `project`
-- `PROJECT_NAME`（优先由 `xcodeproj` 推导）
-- `SCHEME_DEV`（优先项目同名 scheme）
-- `SCHEME_DIS`（默认等于 `SCHEME_DEV`）
-- `BUNDLE_ID_DEV` / `BUNDLE_ID_DIS`（`PRODUCT_BUNDLE_IDENTIFIER`）
-- `TEAM_ID`（`DEVELOPMENT_TEAM`，可为空）
-- `SIGNING_STYLE`（`CODE_SIGN_STYLE`，自动归一化为 `automatic` 或 `manual`）
-- `PROFILE_DEV` / `PROFILE_DIS`（默认 `<project>_dev` / `<project>_dis`）
+- Build/distribute lanes: `dev`, `dis`
+- Signing lane: `certificates` (via `match`, optional but recommended)
+- Quality lane: `quality_gate` (`scan` + optional `swiftlint`)
+- Versioning lane: `versioning` (git commit count + latest commit message)
+- CI lanes: `ci_setup`, `ci_build_dev`, `ci_build_dis`
+- Validation lane: `validate_config`
 
-其中签名规则：
-- `automatic`：不强制要求 `team-id` 和 profile
-- `manual`：要求 `profile-dev` 和 `profile-dis`；`team-id` 缺失时会填 `YOUR_TEAM_ID` 并提醒后续配置
+## Core workflow
 
-## 执行命令
+1. Run bootstrap script in target iOS project root.
+2. Verify detected config using `--dry-run`.
+3. Generate fastlane files.
+4. Copy `fastlane/.env.fastlane.example` to `fastlane/.env.fastlane` and fill real secrets.
+5. Run lanes as needed.
 
-先预览：
+## Bootstrap command
 
 ```bash
 bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
-再生成（只传需要覆盖的值）：
-
 ```bash
 bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
-  --signing-style "automatic"
+  --match-git-url "git@github.com:your-org/certificates.git" \
+  --enable-tests true \
+  --enable-swiftlint false
 ```
 
-## 常见覆盖场景
+## Fastlane usage examples
 
-- 只有 `.xcodeproj`：不用传 `--workspace`
-- 强制手动签名：`--signing-style manual --profile-dev xxx --profile-dis xxx`
-- 强制自动签名：`--signing-style automatic`
-- 显式指定 team：`--team-id ABCD123456`
+```bash
+bundle exec fastlane ios validate_config
+bundle exec fastlane ios quality_gate
+bundle exec fastlane ios dev
+bundle exec fastlane ios dis
+bundle exec fastlane ios ci_build_dev
+```
 
-## 验证命令
+## Notes
 
-- `bundle exec fastlane ios prepare`
-- `bundle exec fastlane ios dev`
-- `bundle exec fastlane ios dis`
-
-## 约束
-
-- 模板默认 iOS 平台。
-- `Fastfile` 包含本地 macOS 通知（`osascript`）。
-- `dis` lane 默认 `ad-hoc` 导出，如需 `app-store`/`enterprise` 需在生成后调整 `export_method` 与 `export_options`。
+- If `SIGNING_STYLE=manual` and `MATCH_GIT_URL` is configured, `certificates` will sync signing assets with `match`.
+- If `TEAM_ID` is missing in manual mode, script writes `YOUR_TEAM_ID` placeholder and warns, without blocking generation.
+- `dis` lane defaults to `ad-hoc`; adjust export method when needed.
