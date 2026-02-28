@@ -1,4 +1,4 @@
-# iOS Fastlane Pgyer Skill
+# iOS Fastlane Skill
 
 English | [中文](#中文说明)
 
@@ -30,11 +30,11 @@ A reusable Codex skill to bootstrap and standardize iOS fastlane with signing sy
 ## Quick Start
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh --dry-run
+bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-pgyer/scripts/bootstrap_fastlane.sh \
+bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --match-git-url "git@github.com:your-org/certificates.git" \
   --enable-tests true \
   --enable-swiftlint false \

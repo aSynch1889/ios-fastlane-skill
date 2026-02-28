@@ -1,9 +1,9 @@
 ---
-name: ios-fastlane-pgyer
+name: ios-fastlane-skill
 description: Reuse an iOS fastlane pipeline with match signing sync, quality gate (tests/lint), git-based versioning, CI lanes, multi-environment staging/prod lanes, changelog markdown generation, Pgyer/TestFlight/App Store release, and Slack/WeChat notifications.
 ---
 
-# iOS Fastlane + Pgyer (Production Ready)
+# iOS Fastlane Skill (Production Ready)
 
 ## Included lanes
 
