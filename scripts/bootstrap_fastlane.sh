@@ -24,6 +24,8 @@ MATCH_GIT_BRANCH="main"
 ENABLE_QUALITY_GATE="true"
 ENABLE_TESTS="true"
 ENABLE_SWIFTLINT="false"
+ENABLE_SLACK_NOTIFY="false"
+ENABLE_WECHAT_NOTIFY="false"
 
 DRY_RUN="false"
 
@@ -45,12 +47,14 @@ Core options:
   --profile-dis       myapp_dis
   --signing-style     automatic|manual
 
-Fastlane power-up options:
+Fastlane options:
   --match-git-url     git@github.com:org/certs.git
   --match-git-branch  main
   --enable-quality-gate true|false
   --enable-tests      true|false
   --enable-swiftlint  true|false
+  --enable-slack-notify true|false
+  --enable-wechat-notify true|false
 
 Other:
   --dry-run
@@ -165,6 +169,8 @@ while [[ $# -gt 0 ]]; do
     --enable-quality-gate) ENABLE_QUALITY_GATE="$2"; shift 2 ;;
     --enable-tests) ENABLE_TESTS="$2"; shift 2 ;;
     --enable-swiftlint) ENABLE_SWIFTLINT="$2"; shift 2 ;;
+    --enable-slack-notify) ENABLE_SLACK_NOTIFY="$2"; shift 2 ;;
+    --enable-wechat-notify) ENABLE_WECHAT_NOTIFY="$2"; shift 2 ;;
     --dry-run) DRY_RUN="true"; shift ;;
     --help) usage; exit 0 ;;
     *)
@@ -227,9 +233,11 @@ fi
 ENABLE_QUALITY_GATE=$(normalize_bool "$ENABLE_QUALITY_GATE")
 ENABLE_TESTS=$(normalize_bool "$ENABLE_TESTS")
 ENABLE_SWIFTLINT=$(normalize_bool "$ENABLE_SWIFTLINT")
+ENABLE_SLACK_NOTIFY=$(normalize_bool "$ENABLE_SLACK_NOTIFY")
+ENABLE_WECHAT_NOTIFY=$(normalize_bool "$ENABLE_WECHAT_NOTIFY")
 
-if [[ -z "$ENABLE_QUALITY_GATE" || -z "$ENABLE_TESTS" || -z "$ENABLE_SWIFTLINT" ]]; then
-  echo "Invalid boolean value in quality gate options. Use true/false." >&2
+if [[ -z "$ENABLE_QUALITY_GATE" || -z "$ENABLE_TESTS" || -z "$ENABLE_SWIFTLINT" || -z "$ENABLE_SLACK_NOTIFY" || -z "$ENABLE_WECHAT_NOTIFY" ]]; then
+  echo "Invalid boolean value in switches. Use true/false." >&2
   exit 1
 fi
 
@@ -285,6 +293,8 @@ echo "  MATCH_GIT_BRANCH=$MATCH_GIT_BRANCH"
 echo "  ENABLE_QUALITY_GATE=$ENABLE_QUALITY_GATE"
 echo "  ENABLE_TESTS=$ENABLE_TESTS"
 echo "  ENABLE_SWIFTLINT=$ENABLE_SWIFTLINT"
+echo "  ENABLE_SLACK_NOTIFY=$ENABLE_SLACK_NOTIFY"
+echo "  ENABLE_WECHAT_NOTIFY=$ENABLE_WECHAT_NOTIFY"
 
 if [[ ${#warnings[@]} -gt 0 ]]; then
   echo "Warnings:"
@@ -327,6 +337,8 @@ render() {
     -e "s|{{ENABLE_QUALITY_GATE}}|$ENABLE_QUALITY_GATE|g" \
     -e "s|{{ENABLE_TESTS}}|$ENABLE_TESTS|g" \
     -e "s|{{ENABLE_SWIFTLINT}}|$ENABLE_SWIFTLINT|g" \
+    -e "s|{{ENABLE_SLACK_NOTIFY}}|$ENABLE_SLACK_NOTIFY|g" \
+    -e "s|{{ENABLE_WECHAT_NOTIFY}}|$ENABLE_WECHAT_NOTIFY|g" \
     "$src" > "$dest"
 }
 
@@ -339,4 +351,4 @@ echo "Generated: $TARGET_DIR/Fastfile"
 echo "Generated: $TARGET_DIR/Appfile"
 echo "Generated: $TARGET_DIR/Pluginfile"
 echo "Generated: $TARGET_DIR/.env.fastlane.example"
-echo "Next: bundle install && copy fastlane/.env.fastlane.example to fastlane/.env.fastlane"
+echo "Next: bundle install && cp fastlane/.env.fastlane.example fastlane/.env.fastlane"

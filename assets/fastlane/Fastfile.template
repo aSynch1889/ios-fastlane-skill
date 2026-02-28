@@ -1,3 +1,5 @@
+require 'json'
+
 default_platform(:ios)
 
 platform :ios do
@@ -26,6 +28,14 @@ platform :ios do
   ENABLE_TESTS = ENV["ENABLE_TESTS"] || "{{ENABLE_TESTS}}"
   ENABLE_SWIFTLINT = ENV["ENABLE_SWIFTLINT"] || "{{ENABLE_SWIFTLINT}}"
 
+  ENABLE_SLACK_NOTIFY = ENV["ENABLE_SLACK_NOTIFY"] || "{{ENABLE_SLACK_NOTIFY}}"
+  ENABLE_WECHAT_NOTIFY = ENV["ENABLE_WECHAT_NOTIFY"] || "{{ENABLE_WECHAT_NOTIFY}}"
+  SLACK_WEBHOOK_URL = ENV["SLACK_WEBHOOK_URL"] || ""
+  WECHAT_WEBHOOK_URL = ENV["WECHAT_WEBHOOK_URL"] || ""
+
+  APP_STORE_CONNECT_API_KEY_PATH = ENV["APP_STORE_CONNECT_API_KEY_PATH"] || ""
+  TESTFLIGHT_GROUPS = ENV["TESTFLIGHT_GROUPS"] || ""
+
   PGYER_API_KEY = ENV["PGYER_API_KEY"] || "YOUR_PGYER_API_KEY"
 
   def send_notification(title, message, sound = "default")
@@ -34,6 +44,10 @@ platform :ios do
     safe_sound = sound.to_s.gsub('"', '\\\"').gsub("'", "\\\\'")
 
     sh("osascript -e 'display notification \\\"#{safe_message}\\\" with title \\\"#{safe_title}\\\" sound name \\\"#{safe_sound}\\\"'")
+  end
+
+  def bool_true?(value)
+    value.to_s.downcase == "true"
   end
 
   def valid_team_id?(team_id)
@@ -46,6 +60,17 @@ platform :ios do
 
   def match_configured?
     !MATCH_GIT_URL.to_s.empty? && MATCH_GIT_URL != "YOUR_MATCH_GIT_URL"
+  end
+
+  def cert_for_export_method(method)
+    method == "development" ? "Apple Development" : "Apple Distribution"
+  end
+
+  def app_store_connect_auth_options
+    return {} if APP_STORE_CONNECT_API_KEY_PATH.to_s.empty?
+    return {} unless File.exist?(APP_STORE_CONNECT_API_KEY_PATH)
+
+    { api_key_path: APP_STORE_CONNECT_API_KEY_PATH }
   end
 
   def gym_container_options
@@ -73,14 +98,46 @@ platform :ios do
         UI.user_error!("Manual signing requires provisioning profile for #{bundle_id}")
       end
       options[:provisioningProfiles] = { bundle_id => profile_name }
-      options[:signingCertificate] = "Apple Development"
+      options[:signingCertificate] = cert_for_export_method(method)
     end
 
     options
   end
 
   def quality_gate_enabled?
-    ENABLE_QUALITY_GATE.to_s.downcase != "false"
+    bool_true?(ENABLE_QUALITY_GATE)
+  end
+
+  private_lane :notify_channels do |options|
+    lane_name = options[:lane] || "unknown"
+    status = options[:status] || "info"
+    version = options[:version] || "-"
+    build = options[:build] || "-"
+    commit = options[:commit] || "-"
+    message = options[:message] || ""
+
+    text = "[#{PROJECT_NAME}] lane=#{lane_name} status=#{status} version=#{version}(#{build}) commit=#{commit} #{message}"
+
+    if bool_true?(ENABLE_SLACK_NOTIFY) && !SLACK_WEBHOOK_URL.to_s.empty?
+      begin
+        slack(
+          slack_url: SLACK_WEBHOOK_URL,
+          message: text,
+          success: status == "success"
+        )
+      rescue => e
+        UI.important("Slack notify failed: #{e.message}")
+      end
+    end
+
+    if bool_true?(ENABLE_WECHAT_NOTIFY) && !WECHAT_WEBHOOK_URL.to_s.empty?
+      begin
+        payload = { msgtype: "text", text: { content: text } }
+        sh("curl -sS -X POST '#{WECHAT_WEBHOOK_URL}' -H 'Content-Type: application/json' -d '#{payload.to_json}' >/dev/null")
+      rescue => e
+        UI.important("WeChat notify failed: #{e.message}")
+      end
+    end
   end
 
   private_lane :run_quality_gate do |options|
@@ -91,7 +148,7 @@ platform :ios do
 
     scheme = options[:scheme] || SCHEME_DEV
 
-    if ENABLE_TESTS.to_s.downcase == "true"
+    if bool_true?(ENABLE_TESTS)
       scan(
         **gym_container_options,
         scheme: scheme,
@@ -100,7 +157,7 @@ platform :ios do
       )
     end
 
-    if ENABLE_SWIFTLINT.to_s.downcase == "true"
+    if bool_true?(ENABLE_SWIFTLINT)
       has_swiftlint = sh("command -v swiftlint >/dev/null 2>&1 && echo yes || echo no").strip == "yes"
       if has_swiftlint
         sh("swiftlint")
@@ -149,7 +206,7 @@ platform :ios do
     }
   end
 
-  private_lane :build_and_upload do |options|
+  private_lane :build_ipa do |options|
     env_type = options[:env_type]
     scheme = options[:scheme]
     configuration = options[:configuration]
@@ -180,21 +237,36 @@ platform :ios do
       include_bitcode: false
     )
 
+    meta.merge({ ipa_path: ipa_path })
+  end
+
+  private_lane :build_and_upload_pgyer do |options|
+    meta = build_ipa(options)
+
     upload_to_pgyer(
-      env_type: env_type,
+      env_type: options[:env_type],
       version: meta[:version],
       build: meta[:build],
       changelog: meta[:changelog],
-      ipa_path: ipa_path
+      ipa_path: meta[:ipa_path]
+    )
+
+    notify_channels(
+      lane: options[:env_type],
+      status: "success",
+      version: meta[:version],
+      build: meta[:build],
+      commit: meta[:commit],
+      message: "uploaded_to=pgyer"
     )
 
     send_notification(
-      "#{env_type.upcase}打包完成",
+      "#{options[:env_type].to_s.upcase}打包完成",
       "#{PROJECT_NAME} #{meta[:version]}(#{meta[:build]}) commit:#{meta[:commit]}",
       "Glass"
     )
 
-    meta.merge({ ipa_path: ipa_path })
+    meta
   end
 
   desc "准备构建环境"
@@ -247,7 +319,7 @@ platform :ios do
     prepare
     certificates(type: "development", readonly: false)
 
-    build_and_upload(
+    build_and_upload_pgyer(
       env_type: "dev",
       scheme: SCHEME_DEV,
       configuration: "Debug",
@@ -262,13 +334,80 @@ platform :ios do
     prepare
     certificates(type: "adhoc", readonly: false)
 
-    build_and_upload(
+    build_and_upload_pgyer(
       env_type: "dis",
       scheme: SCHEME_DIS,
       configuration: "Release",
       export_method: "ad-hoc",
       bundle_id: BUNDLE_ID_DIS,
       profile_name: PROFILE_DIS
+    )
+  end
+
+  desc "发布到 TestFlight"
+  lane :release_testflight do
+    prepare
+    certificates(type: "appstore", readonly: false)
+
+    meta = build_ipa(
+      env_type: "testflight",
+      scheme: SCHEME_DIS,
+      configuration: "Release",
+      export_method: "app-store",
+      bundle_id: BUNDLE_ID_DIS,
+      profile_name: PROFILE_DIS
+    )
+
+    tf_options = app_store_connect_auth_options.merge(
+      ipa: meta[:ipa_path],
+      skip_waiting_for_build_processing: true,
+      changelog: meta[:changelog]
+    )
+    tf_options[:groups] = TESTFLIGHT_GROUPS.split(",").map(&:strip).reject(&:empty?) unless TESTFLIGHT_GROUPS.to_s.empty?
+
+    pilot(tf_options)
+
+    notify_channels(
+      lane: "release_testflight",
+      status: "success",
+      version: meta[:version],
+      build: meta[:build],
+      commit: meta[:commit],
+      message: "uploaded_to=testflight"
+    )
+  end
+
+  desc "发布到 App Store Connect（不自动提交审核）"
+  lane :release_appstore do
+    prepare
+    certificates(type: "appstore", readonly: false)
+
+    meta = build_ipa(
+      env_type: "appstore",
+      scheme: SCHEME_DIS,
+      configuration: "Release",
+      export_method: "app-store",
+      bundle_id: BUNDLE_ID_DIS,
+      profile_name: PROFILE_DIS
+    )
+
+    deliver(
+      **app_store_connect_auth_options,
+      ipa: meta[:ipa_path],
+      force: true,
+      submit_for_review: false,
+      automatic_release: false,
+      skip_metadata: true,
+      skip_screenshots: true
+    )
+
+    notify_channels(
+      lane: "release_appstore",
+      status: "success",
+      version: meta[:version],
+      build: meta[:build],
+      commit: meta[:commit],
+      message: "uploaded_to=appstore_connect"
     )
   end
 
@@ -287,7 +426,7 @@ platform :ios do
     ci_setup
     certificates(type: "development", readonly: true)
 
-    build_and_upload(
+    build_and_upload_pgyer(
       env_type: "dev",
       scheme: SCHEME_DEV,
       configuration: "Debug",
@@ -302,7 +441,7 @@ platform :ios do
     ci_setup
     certificates(type: "adhoc", readonly: true)
 
-    build_and_upload(
+    build_and_upload_pgyer(
       env_type: "dis",
       scheme: SCHEME_DIS,
       configuration: "Release",
@@ -318,6 +457,14 @@ platform :ios do
 
     if manual_signing? && !match_configured?
       UI.important("Manual signing without match: ensure local certificates/profiles are installed")
+    end
+
+    if bool_true?(ENABLE_SLACK_NOTIFY) && SLACK_WEBHOOK_URL.to_s.empty?
+      UI.important("ENABLE_SLACK_NOTIFY=true but SLACK_WEBHOOK_URL is empty")
+    end
+
+    if bool_true?(ENABLE_WECHAT_NOTIFY) && WECHAT_WEBHOOK_URL.to_s.empty?
+      UI.important("ENABLE_WECHAT_NOTIFY=true but WECHAT_WEBHOOK_URL is empty")
     end
 
     UI.success("Config validation passed")
@@ -342,7 +489,7 @@ platform :ios do
     pgyer(
       api_key: PGYER_API_KEY,
       ipa: ipa_path,
-      update_description: "#{env_type.upcase} 构建\n版本: #{version}\nBuild: #{build}\n变更: #{changelog}\n时间: #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
+      update_description: "#{env_type.upcase} 构建\\n版本: #{version}\\nBuild: #{build}\\n变更: #{changelog}\\n时间: #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
     )
   end
 
@@ -353,7 +500,8 @@ platform :ios do
   end
 
   error do |lane, exception|
-    short_msg = exception.message.to_s[0..140]
+    short_msg = exception.message.to_s[0..180]
+    notify_channels(lane: lane, status: "failed", message: short_msg)
     send_notification("打包失败", "#{lane}: #{short_msg}", "Basso")
   end
 end
