@@ -57,11 +57,12 @@ platform :ios do
   @lane_started_at = {}
 
   def send_notification(title, message, sound = "default")
-    safe_title = title.to_s.gsub('"', '\\\"').gsub("'", "\\\\'")
-    safe_message = message.to_s.gsub('"', '\\\"').gsub("'", "\\\\'").gsub("\n", " ")
-    safe_sound = sound.to_s.gsub('"', '\\\"').gsub("'", "\\\\'")
+    safe_title = title.to_s.gsub('"', '\\"')
+    safe_message = message.to_s.gsub('"', '\\"').gsub("\n", " ")
+    safe_sound = sound.to_s.gsub('"', '\\"')
+    script = "display notification \"#{safe_message}\" with title \"#{safe_title}\" sound name \"#{safe_sound}\""
 
-    sh("osascript -e 'display notification \\\"#{safe_message}\\\" with title \\\"#{safe_title}\\\" sound name \\\"#{safe_sound}\\\"'")
+    sh("osascript", "-e", script)
   rescue
     UI.important("macOS notification skipped")
   end
@@ -460,10 +461,14 @@ platform :ios do
 
   desc "准备构建环境"
   lane :prepare do
-    cocoapods(
-      clean_install: true,
-      repo_update: false
-    )
+    if File.exist?("Podfile")
+      cocoapods(
+        clean_install: true,
+        repo_update: false
+      )
+    else
+      UI.message("No Podfile found, skip cocoapods in prepare lane")
+    end
   end
 
   desc "质量门禁（测试+可选 SwiftLint）"
@@ -796,12 +801,16 @@ platform :ios do
       sh("bundle check || bundle install --path vendor/bundle")
     end
 
-    cocoapods(
-      clean_install: true,
-      repo_update: false,
-      silent: true,
-      deployment: bool_true?(CI_COCOAPODS_DEPLOYMENT)
-    )
+    if File.exist?("Podfile")
+      cocoapods(
+        clean_install: true,
+        repo_update: false,
+        silent: true,
+        deployment: bool_true?(CI_COCOAPODS_DEPLOYMENT)
+      )
+    else
+      UI.message("No Podfile found, skip cocoapods in ci_setup lane")
+    end
   end
 
   desc "CI Dev 构建并上传蒲公英"
