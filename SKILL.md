@@ -1,6 +1,6 @@
 ---
 name: ios-fastlane-skill
-description: Reuse an iOS fastlane pipeline with match signing sync, quality gate (tests/lint), git-based versioning, CI lanes, multi-environment staging/prod lanes, changelog markdown generation, Pgyer/TestFlight/App Store release, and Slack/WeChat notifications.
+description: Reuse an iOS fastlane pipeline with match signing sync, profiles lane, quality gate, git/tag versioning, CI lanes, multi-environment staging/prod lanes, changelog + artifact manifest output, release lanes, and Slack/WeChat notifications.
 ---
 
 # iOS Fastlane Skill (Production Ready)
@@ -8,30 +8,20 @@ description: Reuse an iOS fastlane pipeline with match signing sync, quality gat
 ## Included lanes
 
 - Build/distribute: `dev`, `dis`, `staging`, `prod`
-- Signing sync: `certificates` (`match`)
-- Quality gate: `quality_gate` (`scan` + optional `swiftlint`)
-- Versioning: `versioning` (git build number + changelog)
+- Signing: `certificates`, `profiles`
+- Quality/version: `quality_gate`, `versioning`
 - CI: `ci_setup`, `ci_build_dev`, `ci_build_dis`
 - Release: `release_testflight`, `release_appstore`
 - Validation: `validate_config`
 
-## Environment files
+## Hooks and output
 
-Generated examples:
-- `fastlane/.env.fastlane.example`
-- `fastlane/.env.fastlane.staging.example`
-- `fastlane/.env.fastlane.prod.example`
+- Hooks: `before_all`, `after_all`, `error`
+- Changelog markdown: `fastlane/builds/CHANGELOG_<env>_<version>_<build>.md`
+- Artifact manifest: `fastlane/builds/ARTIFACT_MANIFEST_<lane>_<timestamp>.json`
 
-Runtime files:
-- `fastlane/.env.fastlane`
-- `fastlane/.env.fastlane.staging`
-- `fastlane/.env.fastlane.prod`
+## Bootstrap modes
 
-`staging` and `prod` lanes automatically load their env layer file.
-
-## Changelog output
-
-Every build generates markdown changelog under:
-- `fastlane/builds/CHANGELOG_<env>_<version>_<build>.md`
-
-The changelog filename is included in Slack/WeChat notification text.
+- Standard: `--dry-run` then generate
+- Config file: `--config path/to/fastlane-skill.conf`
+- Interactive: `--interactive`

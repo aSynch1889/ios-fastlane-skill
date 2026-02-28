@@ -26,8 +26,14 @@ ENABLE_TESTS="true"
 ENABLE_SWIFTLINT="false"
 ENABLE_SLACK_NOTIFY="false"
 ENABLE_WECHAT_NOTIFY="false"
+GYM_SKIP_CLEAN="false"
+DERIVED_DATA_PATH=""
+CI_BUNDLE_INSTALL="true"
+CI_COCOAPODS_DEPLOYMENT="true"
 
 DRY_RUN="false"
+INTERACTIVE="false"
+CONFIG_PATH=""
 
 usage() {
   cat <<USAGE
@@ -55,6 +61,14 @@ Fastlane options:
   --enable-swiftlint  true|false
   --enable-slack-notify true|false
   --enable-wechat-notify true|false
+  --gym-skip-clean    true|false
+  --derived-data-path /path/to/DerivedData
+  --ci-bundle-install true|false
+  --ci-cocoapods-deployment true|false
+
+Input modes:
+  --config            path/to/fastlane-skill.conf
+  --interactive
 
 Other:
   --dry-run
@@ -69,6 +83,23 @@ pick_first() {
   if [[ -n "$found" ]]; then
     basename "$found"
   fi
+}
+
+trim_spaces() {
+  local v="$1"
+  v="${v#${v%%[![:space:]]*}}"
+  v="${v%${v##*[![:space:]]}}"
+  printf "%s" "$v"
+}
+
+unquote() {
+  local v="$1"
+  if [[ "$v" == \"*\" && "$v" == *\" ]]; then
+    v="${v:1:${#v}-2}"
+  elif [[ "$v" == \'*\' && "$v" == *\' ]]; then
+    v="${v:1:${#v}-2}"
+  fi
+  printf "%s" "$v"
 }
 
 normalize_signing_style() {
@@ -89,6 +120,93 @@ normalize_bool() {
     false|0|no|n) printf "false" ;;
     *) printf "" ;;
   esac
+}
+
+apply_config_kv() {
+  local key="$1"
+  local value="$2"
+  case "$key" in
+    PROJECT_NAME|project_name) PROJECT_NAME="$value" ;;
+    WORKSPACE|workspace) WORKSPACE="$value" ;;
+    XCODEPROJ|xcodeproj) XCODEPROJ="$value" ;;
+    SCHEME_DEV|scheme_dev) SCHEME_DEV="$value" ;;
+    SCHEME_DIS|scheme_dis) SCHEME_DIS="$value" ;;
+    BUNDLE_ID_DEV|bundle_id_dev) BUNDLE_ID_DEV="$value" ;;
+    BUNDLE_ID_DIS|bundle_id_dis) BUNDLE_ID_DIS="$value" ;;
+    TEAM_ID|team_id) TEAM_ID="$value" ;;
+    PROFILE_DEV|profile_dev) PROFILE_DEV="$value" ;;
+    PROFILE_DIS|profile_dis) PROFILE_DIS="$value" ;;
+    SIGNING_STYLE|signing_style) SIGNING_STYLE="$value" ;;
+    MATCH_GIT_URL|match_git_url) MATCH_GIT_URL="$value" ;;
+    MATCH_GIT_BRANCH|match_git_branch) MATCH_GIT_BRANCH="$value" ;;
+    ENABLE_QUALITY_GATE|enable_quality_gate) ENABLE_QUALITY_GATE="$value" ;;
+    ENABLE_TESTS|enable_tests) ENABLE_TESTS="$value" ;;
+    ENABLE_SWIFTLINT|enable_swiftlint) ENABLE_SWIFTLINT="$value" ;;
+    ENABLE_SLACK_NOTIFY|enable_slack_notify) ENABLE_SLACK_NOTIFY="$value" ;;
+    ENABLE_WECHAT_NOTIFY|enable_wechat_notify) ENABLE_WECHAT_NOTIFY="$value" ;;
+    GYM_SKIP_CLEAN|gym_skip_clean) GYM_SKIP_CLEAN="$value" ;;
+    DERIVED_DATA_PATH|derived_data_path) DERIVED_DATA_PATH="$value" ;;
+    CI_BUNDLE_INSTALL|ci_bundle_install) CI_BUNDLE_INSTALL="$value" ;;
+    CI_COCOAPODS_DEPLOYMENT|ci_cocoapods_deployment) CI_COCOAPODS_DEPLOYMENT="$value" ;;
+    *) ;;
+  esac
+}
+
+load_config_file() {
+  local path="$1"
+  if [[ ! -f "$path" ]]; then
+    echo "Config file not found: $path" >&2
+    exit 1
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line=$(trim_spaces "$line")
+    [[ -z "$line" ]] && continue
+    [[ "$line" == \#* ]] && continue
+
+    if [[ "$line" != *"="* ]]; then
+      continue
+    fi
+
+    local key="${line%%=*}"
+    local value="${line#*=}"
+
+    key=$(trim_spaces "$key")
+    value=$(trim_spaces "$value")
+    value=$(unquote "$value")
+
+    apply_config_kv "$key" "$value"
+  done < "$path"
+}
+
+prompt_with_default() {
+  local prompt="$1"
+  local current="$2"
+  local input=""
+
+  if [[ -n "$current" ]]; then
+    read -r -p "$prompt [$current]: " input || true
+  else
+    read -r -p "$prompt: " input || true
+  fi
+
+  if [[ -z "$input" ]]; then
+    printf "%s" "$current"
+  else
+    printf "%s" "$input"
+  fi
+}
+
+apply_interactive_overrides() {
+  PROJECT_NAME=$(prompt_with_default "Project name" "$PROJECT_NAME")
+  SCHEME_DEV=$(prompt_with_default "Dev scheme" "$SCHEME_DEV")
+  SCHEME_DIS=$(prompt_with_default "Dis scheme" "$SCHEME_DIS")
+  BUNDLE_ID_DEV=$(prompt_with_default "Dev bundle id" "$BUNDLE_ID_DEV")
+  BUNDLE_ID_DIS=$(prompt_with_default "Dis bundle id" "$BUNDLE_ID_DIS")
+  SIGNING_STYLE=$(prompt_with_default "Signing style (automatic/manual)" "$SIGNING_STYLE")
+  MATCH_GIT_URL=$(prompt_with_default "Match git url" "$MATCH_GIT_URL")
+  ENABLE_TESTS=$(prompt_with_default "Enable tests (true/false)" "$ENABLE_TESTS")
+  ENABLE_SWIFTLINT=$(prompt_with_default "Enable swiftlint (true/false)" "$ENABLE_SWIFTLINT")
 }
 
 list_schemes() {
@@ -151,6 +269,24 @@ show_build_setting() {
   '
 }
 
+# First pass: only extract --config to preload values.
+args=("$@")
+i=0
+while [[ $i -lt ${#args[@]} ]]; do
+  arg="${args[$i]}"
+  if [[ "$arg" == "--config" ]]; then
+    ((i+=1))
+    [[ $i -lt ${#args[@]} ]] || { echo "--config requires a path" >&2; exit 1; }
+    CONFIG_PATH="${args[$i]}"
+  fi
+  ((i+=1))
+done
+
+if [[ -n "$CONFIG_PATH" ]]; then
+  load_config_file "$CONFIG_PATH"
+fi
+
+# Second pass: full argument parsing (cli overrides config file).
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project-name) PROJECT_NAME="$2"; shift 2 ;;
@@ -171,6 +307,12 @@ while [[ $# -gt 0 ]]; do
     --enable-swiftlint) ENABLE_SWIFTLINT="$2"; shift 2 ;;
     --enable-slack-notify) ENABLE_SLACK_NOTIFY="$2"; shift 2 ;;
     --enable-wechat-notify) ENABLE_WECHAT_NOTIFY="$2"; shift 2 ;;
+    --gym-skip-clean) GYM_SKIP_CLEAN="$2"; shift 2 ;;
+    --derived-data-path) DERIVED_DATA_PATH="$2"; shift 2 ;;
+    --ci-bundle-install) CI_BUNDLE_INSTALL="$2"; shift 2 ;;
+    --ci-cocoapods-deployment) CI_COCOAPODS_DEPLOYMENT="$2"; shift 2 ;;
+    --config) CONFIG_PATH="$2"; shift 2 ;;
+    --interactive) INTERACTIVE="true"; shift ;;
     --dry-run) DRY_RUN="true"; shift ;;
     --help) usage; exit 0 ;;
     *)
@@ -230,13 +372,27 @@ if [[ -z "$SIGNING_STYLE" ]]; then
   SIGNING_STYLE="manual"
 fi
 
+if [[ "$INTERACTIVE" == "true" ]]; then
+  echo "Interactive mode enabled. Press Enter to keep current values."
+  apply_interactive_overrides
+fi
+
+SIGNING_STYLE=$(normalize_signing_style "$SIGNING_STYLE")
+if [[ -z "$SIGNING_STYLE" ]]; then
+  echo "Invalid signing style. Use automatic|manual" >&2
+  exit 1
+fi
+
 ENABLE_QUALITY_GATE=$(normalize_bool "$ENABLE_QUALITY_GATE")
 ENABLE_TESTS=$(normalize_bool "$ENABLE_TESTS")
 ENABLE_SWIFTLINT=$(normalize_bool "$ENABLE_SWIFTLINT")
 ENABLE_SLACK_NOTIFY=$(normalize_bool "$ENABLE_SLACK_NOTIFY")
 ENABLE_WECHAT_NOTIFY=$(normalize_bool "$ENABLE_WECHAT_NOTIFY")
+GYM_SKIP_CLEAN=$(normalize_bool "$GYM_SKIP_CLEAN")
+CI_BUNDLE_INSTALL=$(normalize_bool "$CI_BUNDLE_INSTALL")
+CI_COCOAPODS_DEPLOYMENT=$(normalize_bool "$CI_COCOAPODS_DEPLOYMENT")
 
-if [[ -z "$ENABLE_QUALITY_GATE" || -z "$ENABLE_TESTS" || -z "$ENABLE_SWIFTLINT" || -z "$ENABLE_SLACK_NOTIFY" || -z "$ENABLE_WECHAT_NOTIFY" ]]; then
+if [[ -z "$ENABLE_QUALITY_GATE" || -z "$ENABLE_TESTS" || -z "$ENABLE_SWIFTLINT" || -z "$ENABLE_SLACK_NOTIFY" || -z "$ENABLE_WECHAT_NOTIFY" || -z "$GYM_SKIP_CLEAN" || -z "$CI_BUNDLE_INSTALL" || -z "$CI_COCOAPODS_DEPLOYMENT" ]]; then
   echo "Invalid boolean value in switches. Use true/false." >&2
   exit 1
 fi
@@ -295,6 +451,10 @@ echo "  ENABLE_TESTS=$ENABLE_TESTS"
 echo "  ENABLE_SWIFTLINT=$ENABLE_SWIFTLINT"
 echo "  ENABLE_SLACK_NOTIFY=$ENABLE_SLACK_NOTIFY"
 echo "  ENABLE_WECHAT_NOTIFY=$ENABLE_WECHAT_NOTIFY"
+echo "  GYM_SKIP_CLEAN=$GYM_SKIP_CLEAN"
+echo "  DERIVED_DATA_PATH=${DERIVED_DATA_PATH:-<none>}"
+echo "  CI_BUNDLE_INSTALL=$CI_BUNDLE_INSTALL"
+echo "  CI_COCOAPODS_DEPLOYMENT=$CI_COCOAPODS_DEPLOYMENT"
 
 if [[ ${#warnings[@]} -gt 0 ]]; then
   echo "Warnings:"
@@ -339,6 +499,10 @@ render() {
     -e "s|{{ENABLE_SWIFTLINT}}|$ENABLE_SWIFTLINT|g" \
     -e "s|{{ENABLE_SLACK_NOTIFY}}|$ENABLE_SLACK_NOTIFY|g" \
     -e "s|{{ENABLE_WECHAT_NOTIFY}}|$ENABLE_WECHAT_NOTIFY|g" \
+    -e "s|{{GYM_SKIP_CLEAN}}|$GYM_SKIP_CLEAN|g" \
+    -e "s|{{DERIVED_DATA_PATH}}|$DERIVED_DATA_PATH|g" \
+    -e "s|{{CI_BUNDLE_INSTALL}}|$CI_BUNDLE_INSTALL|g" \
+    -e "s|{{CI_COCOAPODS_DEPLOYMENT}}|$CI_COCOAPODS_DEPLOYMENT|g" \
     "$src" > "$dest"
 }
 
