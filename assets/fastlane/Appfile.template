@@ -1,0 +1,9 @@
+app_identifier("{{BUNDLE_ID_DIS}}")
+
+for_lane :dev do
+  app_identifier("{{BUNDLE_ID_DEV}}")
+end
+
+for_lane :dis do
+  app_identifier("{{BUNDLE_ID_DIS}}")
+end

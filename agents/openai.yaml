@@ -1,0 +1,3 @@
+display_name: iOS Fastlane Pgyer
+short_description: Generate reusable iOS fastlane lanes for build and Pgyer upload
+default_prompt: Reuse my iOS fastlane setup with dev/dis lanes and Pgyer upload in this project.

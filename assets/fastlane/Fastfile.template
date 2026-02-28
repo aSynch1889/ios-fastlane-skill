@@ -1,0 +1,199 @@
+default_platform(:ios)
+
+platform :ios do
+  WORKSPACE = "{{WORKSPACE}}"
+  XCODEPROJ = "{{XCODEPROJ}}"
+  SCHEME_DEV = "{{SCHEME_DEV}}"
+  SCHEME_DIS = "{{SCHEME_DIS}}"
+
+  BUNDLE_ID_DEV = "{{BUNDLE_ID_DEV}}"
+  BUNDLE_ID_DIS = "{{BUNDLE_ID_DIS}}"
+
+  OUTPUT_DIR = "./fastlane/builds"
+
+  TEAM_ID = "{{TEAM_ID}}"
+  PROFILE_DEV = "{{PROFILE_DEV}}"
+  PROFILE_DIS = "{{PROFILE_DIS}}"
+  SIGNING_STYLE = "{{SIGNING_STYLE}}" # automatic | manual
+
+  PGYER_API_KEY = ENV["PGYER_API_KEY"] || "YOUR_PGYER_API_KEY"
+
+  def send_notification(title, message, sound = "default")
+    safe_title = title.to_s.gsub('"', '\\\"').gsub("'", "\\\\'")
+    safe_message = message.to_s.gsub('"', '\\\"').gsub("'", "\\\\'").gsub("\n", " ")
+    safe_sound = sound.to_s.gsub('"', '\\\"').gsub("'", "\\\\'")
+
+    sh("osascript -e 'display notification \\\"#{safe_message}\\\" with title \\\"#{safe_title}\\\" sound name \\\"#{safe_sound}\\\"'")
+  end
+
+  def gym_container_options
+    if !WORKSPACE.to_s.empty? && File.exist?(WORKSPACE)
+      { workspace: WORKSPACE }
+    elsif !XCODEPROJ.to_s.empty? && File.exist?(XCODEPROJ)
+      { project: XCODEPROJ }
+    else
+      UI.user_error!("Neither WORKSPACE nor XCODEPROJ exists. Please check generated config.")
+    end
+  end
+
+  def build_export_options(method:, bundle_id:, profile_name:, team_id:, signing_style:)
+    style = signing_style.to_s.downcase
+    options = {
+      method: method,
+      compileBitcode: false,
+      signingStyle: style
+    }
+
+    if !team_id.to_s.empty? && team_id != "YOUR_TEAM_ID"
+      options[:teamID] = team_id
+    else
+      UI.important("TEAM_ID is not configured. If export fails, set --team-id and regenerate fastlane config.")
+    end
+
+    if style == "manual"
+      if profile_name.to_s.empty?
+        UI.user_error!("Manual signing requires provisioning profile for #{bundle_id}")
+      end
+      options[:provisioningProfiles] = { bundle_id => profile_name }
+      options[:signingCertificate] = "Apple Development"
+    end
+
+    options
+  end
+
+  desc "准备构建环境"
+  lane :prepare do
+    cocoapods(
+      clean_install: true,
+      repo_update: false
+    )
+  end
+
+  desc "打包Dev环境并上传到蒲公英"
+  lane :dev do
+    prepare
+
+    increment_build_number(
+      xcodeproj: XCODEPROJ
+    )
+
+    version = get_version_number(
+      xcodeproj: XCODEPROJ,
+      target: "{{PROJECT_NAME}}"
+    )
+    build = get_build_number(xcodeproj: XCODEPROJ)
+
+    ipa_path = gym(
+      **gym_container_options,
+      scheme: SCHEME_DEV,
+      configuration: "Debug",
+      export_method: "development",
+      output_directory: OUTPUT_DIR,
+      output_name: "{{PROJECT_NAME}}_Dev_#{version}_#{build}.ipa",
+      clean: true,
+      export_options: build_export_options(
+        method: "development",
+        bundle_id: BUNDLE_ID_DEV,
+        profile_name: PROFILE_DEV,
+        team_id: TEAM_ID,
+        signing_style: SIGNING_STYLE
+      ),
+      skip_package_ipa: false,
+      skip_archive: false,
+      include_bitcode: false
+    )
+
+    upload_to_pgyer(
+      env_type: "dev",
+      version: version,
+      build: build,
+      ipa_path: ipa_path
+    )
+
+    send_notification(
+      "Dev环境打包完成",
+      "{{PROJECT_NAME}} #{version} (#{build}) 已上传到蒲公英",
+      "Glass"
+    )
+  end
+
+  desc "打包Dis环境并上传到蒲公英"
+  lane :dis do
+    prepare
+
+    increment_build_number(
+      xcodeproj: XCODEPROJ
+    )
+
+    version = get_version_number(
+      xcodeproj: XCODEPROJ,
+      target: "{{PROJECT_NAME}}"
+    )
+    build = get_build_number(xcodeproj: XCODEPROJ)
+
+    ipa_path = gym(
+      **gym_container_options,
+      scheme: SCHEME_DIS,
+      configuration: "Release",
+      export_method: "ad-hoc",
+      output_directory: OUTPUT_DIR,
+      output_name: "{{PROJECT_NAME}}_Dis_#{version}_#{build}.ipa",
+      clean: true,
+      export_options: build_export_options(
+        method: "ad-hoc",
+        bundle_id: BUNDLE_ID_DIS,
+        profile_name: PROFILE_DIS,
+        team_id: TEAM_ID,
+        signing_style: SIGNING_STYLE
+      ),
+      skip_package_ipa: false,
+      skip_archive: false,
+      include_bitcode: false
+    )
+
+    upload_to_pgyer(
+      env_type: "dis",
+      version: version,
+      build: build,
+      ipa_path: ipa_path
+    )
+
+    send_notification(
+      "Dis环境打包完成",
+      "{{PROJECT_NAME}} #{version} (#{build}) 已上传到蒲公英",
+      "Glass"
+    )
+  end
+
+  private_lane :upload_to_pgyer do |options|
+    env_type = options[:env_type]
+    version = options[:version]
+    build = options[:build]
+    ipa_path = options[:ipa_path]
+
+    unless ipa_path
+      ipa_path = File.join(OUTPUT_DIR, "{{PROJECT_NAME}}_#{env_type.capitalize}_#{version}_#{build}.ipa")
+      ipa_path = File.expand_path(ipa_path) unless ipa_path.start_with?("/")
+    end
+
+    unless File.exist?(ipa_path)
+      raise "找不到 IPA 文件: #{ipa_path}"
+    end
+
+    pgyer(
+      api_key: PGYER_API_KEY,
+      ipa: ipa_path,
+      update_description: "#{env_type.upcase} 环境构建\\n版本: #{version}\\nBuild: #{build}\\n构建时间: #{Time.now.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+  end
+
+  desc "清理构建产物"
+  lane :clean_builds do
+    sh("rm -rf #{OUTPUT_DIR}/*")
+  end
+
+  error do |lane, exception|
+    short_msg = exception.message.to_s[0..100]
+    send_notification("打包失败", short_msg, "Basso")
+  end
+end
