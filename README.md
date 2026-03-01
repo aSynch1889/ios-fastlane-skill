@@ -80,8 +80,7 @@ cp fastlane/.env.fastlane.prod.example fastlane/.env.fastlane.prod
 ### 4. Install and validate
 
 ```bash
-bundle install
-bundle exec fastlane ios validate_config
+bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
 ```
 
 ## Bootstrap Modes
@@ -328,8 +327,7 @@ cp fastlane/.env.fastlane.prod.example fastlane/.env.fastlane.prod
 ### 4. 安装并校验
 
 ```bash
-bundle install
-bundle exec fastlane ios validate_config
+bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
 ```
 
 ## 初始化模式
