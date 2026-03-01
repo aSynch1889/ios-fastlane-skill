@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEMPLATE_DIR="$SKILL_ROOT/assets/fastlane"
 TARGET_DIR="$(pwd)/fastlane"
+PROJECT_SCRIPTS_DIR="$(pwd)/scripts"
 DEFAULT_TEAM_ID="YOUR_TEAM_ID"
 
 PROJECT_NAME=""
@@ -540,6 +541,7 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 mkdir -p "$TARGET_DIR"
+mkdir -p "$PROJECT_SCRIPTS_DIR"
 
 render() {
   local src="$1"
@@ -586,6 +588,9 @@ cp "$TEMPLATE_DIR/Pluginfile.template" "$TARGET_DIR/Pluginfile"
 render "$TEMPLATE_DIR/env.fastlane.example.template" "$TARGET_DIR/.env.fastlane.example"
 render "$TEMPLATE_DIR/env.fastlane.staging.example.template" "$TARGET_DIR/.env.fastlane.staging.example"
 render "$TEMPLATE_DIR/env.fastlane.prod.example.template" "$TARGET_DIR/.env.fastlane.prod.example"
+cp "$SCRIPT_DIR/doctor_fastlane_env.sh" "$PROJECT_SCRIPTS_DIR/doctor_fastlane_env.sh"
+cp "$SCRIPT_DIR/fastlane_run.sh" "$PROJECT_SCRIPTS_DIR/fastlane_run.sh"
+chmod +x "$PROJECT_SCRIPTS_DIR/doctor_fastlane_env.sh" "$PROJECT_SCRIPTS_DIR/fastlane_run.sh"
 
 echo "Generated: $TARGET_DIR/Fastfile"
 echo "Generated: $TARGET_DIR/Appfile"
@@ -594,5 +599,7 @@ echo "Generated: $TARGET_DIR/.env.fastlane.example"
 echo "Generated: $TARGET_DIR/.env.fastlane.staging.example"
 echo "Generated: $TARGET_DIR/.env.fastlane.prod.example"
 echo "Generated: $(pwd)/Gemfile"
-echo "Next: bash $SCRIPT_DIR/doctor_fastlane_env.sh --project $(pwd) --fix"
+echo "Generated: $PROJECT_SCRIPTS_DIR/doctor_fastlane_env.sh"
+echo "Generated: $PROJECT_SCRIPTS_DIR/fastlane_run.sh"
+echo "Next: bash scripts/doctor_fastlane_env.sh --project $(pwd) --fix"
 echo "Then: copy env examples to real env files and run lanes"

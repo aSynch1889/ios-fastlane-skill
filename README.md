@@ -56,13 +56,13 @@ Optional but recommended:
 ### 1. Preview auto-detected config
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
 ### 2. Generate templates
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --match-git-url "git@github.com:your-org/certificates.git" \
   --enable-tests true \
   --enable-swiftlint false \
@@ -80,13 +80,13 @@ cp fastlane/.env.fastlane.prod.example fastlane/.env.fastlane.prod
 ### 4. Install and validate
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
+bash scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
 ```
 
 ### 5. One-command run (recommended)
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/fastlane_run.sh --project "$(pwd)" --lane dev
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane dev
 ```
 
 ## Bootstrap Modes
@@ -100,14 +100,14 @@ Use command-line arguments for direct setup.
 Create a `fastlane-skill.conf` (key=value), then run:
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --config ./fastlane-skill.conf
 ```
 
 ### Mode C: Interactive wizard
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --interactive
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --interactive
 ```
 
 ## Common Lane Examples
@@ -309,13 +309,13 @@ Notification messages include lane/status/version/build/commit and summary field
 ### 1. 先预览自动探测结果
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
 ### 2. 生成模板
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --match-git-url "git@github.com:your-org/certificates.git" \
   --enable-tests true \
   --enable-swiftlint false \
@@ -333,13 +333,13 @@ cp fastlane/.env.fastlane.prod.example fastlane/.env.fastlane.prod
 ### 4. 安装并校验
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
+bash scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
 ```
 
 ### 5. 一键执行（推荐）
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/fastlane_run.sh --project "$(pwd)" --lane dev
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane dev
 ```
 
 ## 初始化模式
@@ -353,14 +353,14 @@ bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/fastlane_run.sh --
 先写 `fastlane-skill.conf`（`key=value`），再执行：
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --config ./fastlane-skill.conf
 ```
 
 ### 模式 C：交互向导模式
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --interactive
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --interactive
 ```
 
 ## 常见 Lane 用法
