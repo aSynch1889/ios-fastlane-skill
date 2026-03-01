@@ -24,6 +24,8 @@ It generates templates and scripts so teams can focus on project-specific config
   - `fastlane/.env.fastlane.example`
   - `fastlane/.env.fastlane.staging.example`
   - `fastlane/.env.fastlane.prod.example`
+  - `scripts/doctor_fastlane_env.sh`
+  - `scripts/fastlane_run.sh`
 - Supports `.xcworkspace` and `.xcodeproj`
 - Auto-detects key project fields during bootstrap
 - Lanes:
@@ -43,7 +45,7 @@ It generates templates and scripts so teams can focus on project-specific config
 ## Prerequisites
 
 - macOS + Xcode CLI tools (`xcodebuild` in PATH)
-- Ruby + Bundler
+- Ruby 3.1~3.3 + Bundler (Ruby 4.x not recommended for this fastlane setup)
 - iOS project with `.xcodeproj` or `.xcworkspace`
 
 Optional but recommended:
@@ -76,6 +78,11 @@ cp fastlane/.env.fastlane.example fastlane/.env.fastlane
 cp fastlane/.env.fastlane.staging.example fastlane/.env.fastlane.staging
 cp fastlane/.env.fastlane.prod.example fastlane/.env.fastlane.prod
 ```
+
+`bootstrap_fastlane.sh` also writes project-local helper scripts under `scripts/`:
+
+- `scripts/doctor_fastlane_env.sh` for preflight checks and optional auto-fixes
+- `scripts/fastlane_run.sh` for one-command doctor + lane run
 
 ### 4. Install and validate
 

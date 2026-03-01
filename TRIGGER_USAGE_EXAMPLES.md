@@ -6,7 +6,7 @@
 
 - 你的工程目录下有 iOS 工程（`.xcworkspace` 或 `.xcodeproj`）。
 - 已安装 Ruby/Bundler（用于执行 `bundle exec fastlane`）。
-- 已将 skill 安装到本机：`/Users/newdroid/.codex/skills/ios-fastlane-skill`。
+- 已将 skill 安装到本机：`${CODEX_HOME}/skills/ios-fastlane-skill`（跨机器推荐使用 `$CODEX_HOME`，不要写死用户目录）。
 
 ## 2. 在 Codex 中触发 Skill 的方式
 
@@ -35,7 +35,7 @@
 ## 3.1 第一步：dry-run 查看自动识别结果
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
 ```
 
 重点确认这些识别项是否正确：
@@ -50,7 +50,7 @@ bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane
 ## 3.2 第二步：正式生成 fastlane 目录与模板
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --signing-style manual \
   --match-git-url "git@github.com:your-org/certificates.git" \
   --enable-tests true \
@@ -77,8 +77,7 @@ cp fastlane/.env.fastlane.prod.example fastlane/.env.fastlane.prod
 ## 3.4 第四步：安装依赖并校验
 
 ```bash
-bundle install
-bundle exec fastlane ios validate_config
+bash scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
 ```
 
 ## 4. 常见触发指令模板（可直接复制到 Codex）
@@ -172,35 +171,34 @@ bundle exec fastlane ios clean_builds
 ## 6.1 最小可用流程（新项目）
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --dry-run
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh
 cp fastlane/.env.fastlane.example fastlane/.env.fastlane
-bundle install
-bundle exec fastlane ios validate_config
-bundle exec fastlane ios dev
+bash scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane dev
 ```
 
 ## 6.2 团队协作流程（推荐）
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --signing-style manual \
   --match-git-url "git@github.com:your-org/certificates.git" \
   --enable-quality-gate true \
   --enable-tests true
-bundle install
-bundle exec fastlane ios ci_setup
-bundle exec fastlane ios ci_build_dis
+bash scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane ci_setup
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane ci_build_dis
 ```
 
 ## 6.3 商店发布流程
 
 ```bash
-bundle exec fastlane ios validate_config
-bundle exec fastlane ios snapshot_capture
-bundle exec fastlane ios metadata_sync
-bundle exec fastlane ios release_testflight
-bundle exec fastlane ios release_appstore
+bash scripts/doctor_fastlane_env.sh --project "$(pwd)" --fix
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane snapshot_capture
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane metadata_sync
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane release_testflight
+bash scripts/fastlane_run.sh --project "$(pwd)" --lane release_appstore
 ```
 
 ## 7. 参数传递优先级
@@ -215,7 +213,7 @@ bundle exec fastlane ios release_appstore
 示例：
 
 ```bash
-bash /Users/newdroid/.codex/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
+bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
   --config ./fastlane-skill.conf \
   --scheme-dev "MyApp-Debug"
 ```
