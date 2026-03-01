@@ -20,6 +20,7 @@ description: Reuse an iOS fastlane pipeline with match signing sync, profiles la
 - Hooks: `before_all`, `after_all`, `error`
 - Changelog markdown: `fastlane/builds/CHANGELOG_<env>_<version>_<build>.md`
 - Artifact manifest: `fastlane/builds/ARTIFACT_MANIFEST_<lane>_<timestamp>.json`
+- Generated `Fastfile` normalizes `WORKSPACE`/`XCODEPROJ` paths from project root to avoid relative-path build failures.
 
 ## Bootstrap modes
 

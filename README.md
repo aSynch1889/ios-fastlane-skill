@@ -27,6 +27,7 @@ It generates templates and scripts so teams can focus on project-specific config
   - `scripts/doctor_fastlane_env.sh`
   - `scripts/fastlane_run.sh`
 - Supports `.xcworkspace` and `.xcodeproj`
+- Normalizes project paths in generated `Fastfile` (resolved from project root), so lanes work even when fastlane runs from `fastlane/`
 - Auto-detects key project fields during bootstrap
 - Lanes:
   - Base: `prepare`, `quality_gate`, `versioning`, `validate_config`, `clean_builds`
@@ -116,6 +117,15 @@ bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
 ```bash
 bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --interactive
 ```
+
+## Path Resolution Behavior
+
+- `WORKSPACE` / `XCODEPROJ` are resolved to absolute paths from project root in generated `Fastfile`.
+- `OUTPUT_DIR` is resolved to `fastlane/builds` under the current project.
+- `METADATA_PATH` is resolved from project root (unless explicitly overridden with an absolute env value).
+
+This avoids common failures like:
+`Neither WORKSPACE nor XCODEPROJ exists. Please check generated config.`
 
 ## Common Lane Examples
 
@@ -257,6 +267,7 @@ Notification messages include lane/status/version/build/commit and summary field
 - In manual signing mode, configure profiles/team/match carefully.
 - For App Store release, ensure metadata path and App Store Connect auth are valid.
 - For screenshot pipeline, configure devices/languages explicitly for deterministic outputs.
+- If build lanes fail with signing errors (for example missing `iOS Development` certificate), that is an environment/codesigning setup issue rather than a template-generation issue.
 
 ---
 
@@ -303,7 +314,7 @@ Notification messages include lane/status/version/build/commit and summary field
 ## 前置要求
 
 - macOS + Xcode 命令行工具（PATH 内可用 `xcodebuild`）
-- Ruby + Bundler
+- Ruby 3.1~3.3 + Bundler（不建议 Ruby 4.x）
 - iOS 工程（`.xcodeproj` 或 `.xcworkspace`）
 
 可选但推荐：
@@ -369,6 +380,15 @@ bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh \
 ```bash
 bash ${CODEX_HOME}/skills/ios-fastlane-skill/scripts/bootstrap_fastlane.sh --interactive
 ```
+
+## 路径解析行为
+
+- 生成的 `Fastfile` 会把 `WORKSPACE` / `XCODEPROJ` 按项目根目录解析为绝对路径。
+- `OUTPUT_DIR` 固定解析到当前项目的 `fastlane/builds`。
+- `METADATA_PATH` 按项目根目录解析（除非你在环境变量里显式传入绝对路径）。
+
+这样可以避免常见错误：
+`Neither WORKSPACE nor XCODEPROJ exists. Please check generated config.`
 
 ## 常见 Lane 用法
 
@@ -510,3 +530,4 @@ bundle exec fastlane ios release_appstore
 - 手动签名模式下请确保 profile/team/match 配置正确。
 - App Store 发布前请确认 metadata 路径和 App Store Connect 鉴权文件有效。
 - 截图流水线建议固定 devices/languages，保证输出稳定。
+- 如果构建类 lane 报证书缺失（例如缺少 `iOS Development` 证书），这通常是本机签名环境问题，不是模板生成问题。

@@ -10,16 +10,19 @@ Dotenv.overload(base_env_path) if File.exist?(base_env_path)
 platform :ios do
   PROJECT_NAME = "{{PROJECT_NAME}}"
   PROJECT_TARGET = ENV["FL_TARGET"] || "{{PROJECT_NAME}}"
+  PROJECT_ROOT = File.expand_path("..", __dir__)
 
-  WORKSPACE = "{{WORKSPACE}}"
-  XCODEPROJ = "{{XCODEPROJ}}"
+  WORKSPACE_INPUT = "{{WORKSPACE}}"
+  XCODEPROJ_INPUT = "{{XCODEPROJ}}"
+  WORKSPACE = WORKSPACE_INPUT.to_s.empty? ? "" : File.expand_path(WORKSPACE_INPUT, PROJECT_ROOT)
+  XCODEPROJ = XCODEPROJ_INPUT.to_s.empty? ? "" : File.expand_path(XCODEPROJ_INPUT, PROJECT_ROOT)
   SCHEME_DEV = "{{SCHEME_DEV}}"
   SCHEME_DIS = "{{SCHEME_DIS}}"
 
   BUNDLE_ID_DEV = "{{BUNDLE_ID_DEV}}"
   BUNDLE_ID_DIS = "{{BUNDLE_ID_DIS}}"
 
-  OUTPUT_DIR = "./fastlane/builds"
+  OUTPUT_DIR = File.expand_path("builds", __dir__)
 
   TEAM_ID = "{{TEAM_ID}}"
   PROFILE_DEV = "{{PROFILE_DEV}}"
@@ -40,7 +43,8 @@ platform :ios do
 
   APP_STORE_CONNECT_API_KEY_PATH = ENV["APP_STORE_CONNECT_API_KEY_PATH"] || ""
   TESTFLIGHT_GROUPS = ENV["TESTFLIGHT_GROUPS"] || ""
-  METADATA_PATH = ENV["METADATA_PATH"] || "{{METADATA_PATH}}"
+  METADATA_PATH_INPUT = ENV["METADATA_PATH"] || "{{METADATA_PATH}}"
+  METADATA_PATH = METADATA_PATH_INPUT.to_s.empty? ? "" : File.expand_path(METADATA_PATH_INPUT, PROJECT_ROOT)
   ENABLE_METADATA_UPLOAD = ENV["ENABLE_METADATA_UPLOAD"] || "{{ENABLE_METADATA_UPLOAD}}"
   ENABLE_SCREENSHOT_UPLOAD = ENV["ENABLE_SCREENSHOT_UPLOAD"] || "{{ENABLE_SCREENSHOT_UPLOAD}}"
   ENABLE_SNAPSHOT = ENV["ENABLE_SNAPSHOT"] || "{{ENABLE_SNAPSHOT}}"
@@ -150,6 +154,19 @@ platform :ios do
 
   def quality_gate_enabled?
     bool_true?(ENABLE_QUALITY_GATE)
+  end
+
+  def installed_codesign_identities
+    output = sh("security find-identity -v -p codesigning 2>/dev/null || true")
+    lines = output.to_s.split("\n")
+    lines.select { |l| l.include?("Apple Development") || l.include?("iOS Development") || l.include?("Apple Distribution") || l.include?("iPhone Distribution") }
+  rescue
+    []
+  end
+
+  def ensure_codesigning_ready!
+    return unless installed_codesign_identities.empty?
+    UI.user_error!("No local code signing identities found. Install Apple Development/Distribution certificates with private keys, or configure match signing in .env.fastlane.")
   end
 
   def latest_fastlane_log
@@ -378,6 +395,7 @@ platform :ios do
     )
 
     started = Time.now
+    ensure_codesigning_ready!
 
     gym_options = {
       **gym_container_options,
@@ -398,6 +416,11 @@ platform :ios do
       skip_archive: false,
       include_bitcode: false
     }
+
+    unless manual_signing?
+      # Let xcodebuild fetch/manage provisioning profiles for automatic signing flows.
+      gym_options[:xcargs] = "-allowProvisioningUpdates -allowProvisioningDeviceRegistration"
+    end
 
     ipa_path = gym(gym_options)
 
@@ -710,6 +733,7 @@ platform :ios do
     )
 
     tf_options = app_store_connect_auth_options.merge(
+      app_identifier: BUNDLE_ID_DIS,
       ipa: meta[:ipa_path],
       skip_waiting_for_build_processing: true,
       changelog: meta[:changelog]
@@ -752,8 +776,14 @@ platform :ios do
 
   desc "仅同步 metadata / screenshots（不上传二进制）"
   lane :metadata_sync do
+    unless bool_true?(ENABLE_METADATA_UPLOAD) || bool_true?(ENABLE_SCREENSHOT_UPLOAD)
+      UI.important("Both ENABLE_METADATA_UPLOAD and ENABLE_SCREENSHOT_UPLOAD are false, skip metadata_sync")
+      next
+    end
+
     deliver(
       **app_store_connect_auth_options,
+      app_identifier: BUNDLE_ID_DIS,
       force: true,
       skip_binary_upload: true,
       metadata_path: METADATA_PATH,
@@ -780,6 +810,7 @@ platform :ios do
 
     deliver(
       **app_store_connect_auth_options,
+      app_identifier: BUNDLE_ID_DIS,
       ipa: meta[:ipa_path],
       force: true,
       submit_for_review: false,
