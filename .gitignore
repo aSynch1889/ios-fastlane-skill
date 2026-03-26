@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-*
+*.sublime-project
+*.sublime-workspace
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+*.backup
+*.orig
+
+# Fastlane specific (when skill is used in projects)
+fastlane/builds/
+fastlane/.env.fastlane
+fastlane/.env.fastlane.*
+!.env.fastlane.*.example
+
+# Test artifacts
+test/
+spec/
+*.gem
+
+# Ruby
+*.gem
+*.rbc
+.config
+coverage
+InstalledFiles
+lib/bundler/man
+pkg
+rdoc
+spec/reports
+test/tmp
+test/version_tmp
+tmp
+.bundle
